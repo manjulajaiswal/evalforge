@@ -16,6 +16,10 @@ on:
         description: "Run only the first N cases (empty = full dataset)"
         required: false
         default: ""
+      request_interval:
+        description: "Minimum seconds between Gemini requests (raise to avoid free-tier 429 rate limits)"
+        required: false
+        default: "4"
 
 permissions:
   contents: read
@@ -32,12 +36,12 @@ env:
 jobs:
   offline-tests:
     name: Lint, dataset validation and offline tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
@@ -65,8 +69,8 @@ jobs:
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.LIVE_EVAL_ON_PUSH == 'true')
-    runs-on: ubuntu-latest
-    timeout-minutes: 90
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
     steps:
       - name: Check that the API key secret exists
         id: secret
@@ -89,10 +93,10 @@ jobs:
             exit 2
           fi
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         if: steps.secret.outputs.available == 'true'
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         if: steps.secret.outputs.available == 'true'
         with:
           python-version: ${{ env.PYTHON_VERSION }}
@@ -105,7 +109,7 @@ jobs:
 
       - name: Cache embedding model
         if: steps.secret.outputs.available == 'true'
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/huggingface
           key: hf-all-MiniLM-L6-v2-v1
@@ -120,6 +124,7 @@ jobs:
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           LIMIT: ${{ github.event.inputs.limit }}
+          GEMINI_MIN_REQUEST_INTERVAL_S: ${{ github.event.inputs.request_interval || '4' }}
         run: |
           set +e
           if [ -n "$LIMIT" ]; then
@@ -142,7 +147,7 @@ jobs:
 
       - name: Upload reports
         if: always() && steps.secret.outputs.available == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: evalforge-reports-${{ github.run_id }}
           path: |

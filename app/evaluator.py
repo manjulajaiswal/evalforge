@@ -221,6 +221,11 @@ def evaluate_case(case: GoldenCase, settings: EvalSettings) -> dict:
         "end_to_end": end_to_end_ms,
         "judge_total": faith.call.latency_ms + correct.call.latency_ms,
     }
+    # API attempts per judge call (> 1 means retries, usually HTTP 429 rate limiting).
+    record["judge_calls"] = {
+        "faithfulness_attempts": faith.call.attempts,
+        "correctness_attempts": correct.call.attempts,
+    }
     record["tokens"] = {"generation": _usage_dict(generation.usage), "judge": _usage_dict(judge_tokens)}
     record["cost_usd"] = {
         "generation": generation_cost,
@@ -420,6 +425,10 @@ def aggregate(records: list[dict]) -> dict:
             "generation": {"p50": percentile(gen, 50), "p95": percentile(gen, 95), "mean": mean(gen)},
             "retrieval": {"p50": percentile(ret, 50), "p95": percentile(ret, 95), "mean": mean(ret)},
             "judge_per_case": {"p50": percentile(judge_lat, 50), "p95": percentile(judge_lat, 95)},
+            "generation_retries": sum(r["generation"]["attempts"] - 1 for r in completed),
+            "judge_retries": sum(
+                sum(r.get("judge_calls", {}).values()) - len(r.get("judge_calls", {})) for r in completed
+            ),
             "percentile_method": "linear interpolation (numpy 'linear' / PERCENTILE.INC)",
         },
         "tokens": {

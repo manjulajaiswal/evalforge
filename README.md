@@ -253,7 +253,7 @@ Don't lower a threshold just to make a run pass.
 ## 11. GitHub Actions (`.github/workflows/evalforge.yml`)
 
 - **offline-tests** runs on every push and pull request, with no secrets. It installs pinned dependencies (CPU-only PyTorch), then runs `ruff`, dataset validation and the full offline pytest suite.
-- **live-evaluation** runs only when started manually (*Actions → EvalForge → Run workflow*, with an optional case limit), or on pushes to `main` if the repository variable `LIVE_EVAL_ON_PUSH` is `true`. It never runs for pull requests, so forked PRs can't reach the secret. It ingests, runs `scripts.run_eval`, publishes the Markdown report to the job summary, uploads the reports as an artifact, and then fails the job with the evaluator's exit code. Because this job only runs when a live evaluation was requested, a missing secret **fails the job** ("Live evaluation NOT RUN") instead of leaving a misleading green check.
+- **live-evaluation** runs only when started manually (*Actions → EvalForge → Run workflow*, with an optional case limit and a minimum interval between API requests, default 4 s, to stay under free-tier rate limits), or on pushes to `main` if the repository variable `LIVE_EVAL_ON_PUSH` is `true`. It never runs for pull requests, so forked PRs can't reach the secret. It ingests, runs `scripts.run_eval`, publishes the Markdown report to the job summary, uploads the reports as an artifact, and then fails the job with the evaluator's exit code. Because this job only runs when a live evaluation was requested, a missing secret **fails the job** ("Live evaluation NOT RUN") instead of leaving a misleading green check.
 
 **Secret setup:** repository *Settings → Secrets and variables → Actions → New repository secret*, with name `GEMINI_API_KEY`. Optional: under *Variables*, add `LIVE_EVAL_ON_PUSH` = `true`.
 
@@ -303,14 +303,23 @@ Don't lower a threshold just to make a run pass.
 
 | Item | Status | Evidence |
 |---|---|---|
-| Offline suite (192 tests) | ✅ passes on Python 3.12.13 and 3.13 | `python -m pytest` |
+| Offline suite (193 tests) | ✅ passes on Python 3.12.13 and 3.13 | `python -m pytest` |
 | Independent code review | ✅ 12 confirmed findings fixed, each with a regression test | see git history |
 | Lint, workflow syntax | ✅ | `ruff check .`, `actionlint` |
 | Dataset (110 cases) | ✅ valid | `python -m scripts.validate_dataset` |
 | Dashboard | ✅ starts, renders with/without reports | `streamlit run …`, AppTest tests |
 | Exit codes 0/1/2/3/4, regression demo | ✅ (with fakes; exit 2 also as a real process) | `tests/test_quality_gates_cli.py` |
-| Real ingestion with MiniLM | ⏳ not yet run in the build environment (no Hugging Face access) | run `python -m scripts.ingest` |
-| Live Gemini evaluation | ⏳ no live results yet; no numbers are claimed | run `python -m scripts.run_eval` |
-| GitHub Actions on GitHub | ⏳ not yet executed on GitHub | push and check the Actions tab |
+| Offline CI on GitHub | ✅ green (run #1) | Actions tab |
+| Real ingestion with MiniLM | ✅ ran in GitHub Actions (run #2): 3 documents, 3 chunks | Actions log |
+| Live Gemini evaluation, 5-case smoke run | ✅ completed: 5/5 passed, faithfulness 1.0, 0 hallucinations, about $0.0013 per query; failed the provisional p95 latency gate (10.8 s, n=5) | run #2 report |
+| Full 110-case live evaluation | ⏳ not run yet | `Run workflow` with an empty limit |
 
-Live results will be added here once a real run exists.
+### First live run (run #2, 5 cases, 2026-10-26)
+
+All 5 answers were correct and faithful (judge and deterministic fact checks agree). The run exited with code 1 because **p95 end-to-end latency was 10.8 s against the provisional 5 s gate**. Looking at the per-case data:
+
+- **A measurement bug, now fixed.** q001's retrieval took 5.2 s, while the other cases took 11–13 ms. That was the one-off embedding-model load being counted as query time. The model is now warmed up before timing starts, and the warm-up is reported separately.
+- **Real model variance.** q005's generation took 11.7 s on a single attempt (no retries), with 478 thinking tokens against about 200 for the other cases. With n=5, "p95" is effectively the slowest case.
+- **Judge calls took up to 119 s,** consistent with free-tier rate-limit retries. They are evaluation overhead, not user-facing latency; retries are now counted in the report.
+
+The 5 s threshold will be recalibrated from the full 110-case run, not from 5 samples.

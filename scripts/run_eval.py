@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
 import traceback
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -23,6 +24,7 @@ from pathlib import Path
 
 from app import config
 from app.dataset import dataset_fingerprint, load_and_validate, summarize
+from app.embedder import generate_embeddings
 from app.errors import ConfigurationError, DatasetValidationError
 from app.evaluator import EvalSettings, aggregate, run_evaluation
 from app.gemini_client import LLMClient, get_llm_client
@@ -153,6 +155,16 @@ def _main(
         )
         return EXIT_CONFIG_OR_DATASET
 
+    # 4. Warm up the embedding model so its one-off load time (seconds) is not
+    # counted as the first question's retrieval latency.
+    warmup_start = time.perf_counter()
+    try:
+        generate_embeddings(["warm-up"])
+    except ConfigurationError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return EXIT_CONFIG_OR_DATASET
+    embedding_warmup_ms = (time.perf_counter() - warmup_start) * 1000
+
     try:
         llm = llm or get_llm_client()
     except ConfigurationError as exc:
@@ -180,6 +192,7 @@ def _main(
             "max_consecutive_failures": config.MAX_CONSECUTIVE_INFRA_FAILURES,
             "judge_max_format_retries": config.JUDGE_MAX_FORMAT_RETRIES,
         },
+        "embedding_warmup_ms": round(embedding_warmup_ms, 1),  # one-off startup cost, excluded from per-query latency
         "pricing": {"source": PRICING_SOURCE_URL, "verified_on": PRICING_VERIFIED_ON, "currency": PRICING_CURRENCY},
         "quality_gates": config.QUALITY_GATES,
     }

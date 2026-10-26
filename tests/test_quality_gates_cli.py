@@ -216,6 +216,30 @@ def test_unencodable_characters_do_not_crash_on_windows_consoles(ingested_store,
     assert (tmp_path / "r.json").exists()
 
 
+def test_model_load_time_is_not_counted_as_first_query_latency(oracle_llm, ingested_store, report_paths):
+    """Live run #2 showed q001 retrieval = 5.2 s (model loading) vs ~12 ms for the rest."""
+    import time
+
+    from app import embedder
+    from tests.fakes import FakeEmbedder
+
+    class SlowFirstLoad(FakeEmbedder):
+        loaded = False
+
+        def encode(self, texts):
+            if not self.loaded:
+                time.sleep(0.4)
+                self.loaded = True
+            return super().encode(texts)
+
+    embedder.set_embedding_model(SlowFirstLoad())
+    run(SMALL, oracle_llm, ingested_store, report_paths)
+    report = json.loads(report_paths.json.read_text())
+    assert report["config"]["embedding_warmup_ms"] >= 400
+    assert report["cases"][0]["latency_ms"]["retrieval"] < 200
+    assert "warm-up" in report_paths.markdown.read_text()
+
+
 def test_cli_rejects_empty_store(oracle_llm, store, report_paths, capsys):
     assert run(SMALL, oracle_llm, store, report_paths) == EXIT_CONFIG_OR_DATASET
     assert "scripts.ingest" in capsys.readouterr().err

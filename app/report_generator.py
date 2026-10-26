@@ -289,6 +289,13 @@ def render_markdown(report: dict) -> str:
         f"| judge (eval overhead, not user-facing) | {_fmt(lat['judge_per_case']['p50'], 'ms')} | "
         f"{_fmt(lat['judge_per_case']['p95'], 'ms')} | |"
     )
+    lines += [
+        "",
+        f"API retries: generation {lat.get('generation_retries', 'n/a')}, judge {lat.get('judge_retries', 'n/a')} "
+        "(retries are usually HTTP 429 rate limiting or 503 overload). "
+        f"One-off embedding-model warm-up before the run: {_fmt(cfg.get('embedding_warmup_ms'), 'ms')} "
+        "(excluded from per-query latency).",
+    ]
     if lat["n"] and lat["n"] < 20:
         lines += ["", f"> Only {lat['n']} samples: percentiles are preliminary."]
     lines += [

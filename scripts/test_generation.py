@@ -1,5 +1,4 @@
-from app.rag_pipeline import retrieve_context, generate_answer
-
+from app.rag_pipeline import generate_answer, retrieve_context
 
 question = "How many days do customers have to request a refund?"
 

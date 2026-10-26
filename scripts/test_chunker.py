@@ -1,6 +1,5 @@
-from app.loader import load_documents
 from app.chunker import chunk_documents
-
+from app.loader import load_documents
 
 documents = load_documents()
 chunks = chunk_documents(documents)

@@ -1,6 +1,4 @@
-from app.metrics import refund_days_match
-from app.metrics import semantic_similarity
-
+from app.metrics import refund_days_match, semantic_similarity
 
 expected = "Customers can request a refund within 7 days of purchase."
 

@@ -1,0 +1,167 @@
+name: EvalForge
+
+# Offline checks run on every push and pull request and never need secrets.
+# The live evaluation calls the Gemini API (costs money, needs the
+# GEMINI_API_KEY repository secret) and therefore only runs when started
+# manually, or on pushes to main when the repository variable
+# LIVE_EVAL_ON_PUSH is set to "true". It never runs for pull requests, so a
+# forked PR can never reach the secret.
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "Run only the first N cases (empty = full dataset)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: evalforge-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.12"
+  # CPU-only PyTorch wheels keep installs small and fast on Linux runners.
+  PIP_EXTRA_INDEX_URL: https://download.pytorch.org/whl/cpu
+
+jobs:
+  offline-tests:
+    name: Lint, dataset validation and offline tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Lint (ruff)
+        run: ruff check .
+
+      - name: Validate golden dataset
+        run: python -m scripts.validate_dataset
+
+      - name: Offline test suite (no API key, no model download)
+        env:
+          GEMINI_API_KEY: ""
+        run: python -m pytest -v
+
+  live-evaluation:
+    name: Live evaluation and quality gates
+    needs: offline-tests
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.LIVE_EVAL_ON_PUSH == 'true')
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Check that the API key secret exists
+        id: secret
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          # This job only runs when a live evaluation was explicitly requested, so a
+          # missing secret is a configuration error: fail (red), never a silent green.
+          if [ -n "$GEMINI_API_KEY" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::error::Live evaluation NOT RUN: the GEMINI_API_KEY repository secret is not configured."
+            {
+              echo "## Live evaluation not run"
+              echo ""
+              echo "The \`GEMINI_API_KEY\` repository secret is not set, so no live evaluation ran."
+              echo "No live quality-gate result exists for this commit."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 2
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.secret.outputs.available == 'true'
+
+      - uses: actions/setup-python@v5
+        if: steps.secret.outputs.available == 'true'
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        if: steps.secret.outputs.available == 'true'
+        run: pip install -r requirements.txt
+
+      - name: Cache embedding model
+        if: steps.secret.outputs.available == 'true'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-all-MiniLM-L6-v2-v1
+
+      - name: Ingest knowledge base
+        if: steps.secret.outputs.available == 'true'
+        run: python -m scripts.ingest
+
+      - name: Run live evaluation
+        id: eval
+        if: steps.secret.outputs.available == 'true'
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          LIMIT: ${{ github.event.inputs.limit }}
+        run: |
+          set +e
+          if [ -n "$LIMIT" ]; then
+            python -m scripts.run_eval --limit "$LIMIT"
+          else
+            python -m scripts.run_eval
+          fi
+          code=$?
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Publish report summary
+        if: always() && steps.secret.outputs.available == 'true'
+        run: |
+          if [ -f reports/latest_report.md ]; then
+            cat reports/latest_report.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "No report was produced." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload reports
+        if: always() && steps.secret.outputs.available == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: evalforge-reports-${{ github.run_id }}
+          path: |
+            reports/latest_report.json
+            reports/latest_report.md
+            reports/history.jsonl
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Enforce evaluation result
+        if: steps.secret.outputs.available == 'true'
+        env:
+          CODE: ${{ steps.eval.outputs.exit_code }}
+        run: |
+          case "$CODE" in
+            0) echo "Evaluation completed and all quality gates passed." ;;
+            1) echo "::error::Quality gate failure (exit 1). See the report summary."; exit 1 ;;
+            2) echo "::error::Invalid configuration or dataset (exit 2)."; exit 2 ;;
+            3) echo "::error::Evaluation incomplete because of API/judge failures (exit 3). Not a pass."; exit 3 ;;
+            4) echo "::error::Evaluation engine error (exit 4)."; exit 4 ;;
+            *) echo "::error::Unexpected exit code '$CODE'."; exit 1 ;;
+          esac

@@ -1,0 +1,11 @@
+google-genai  
+chromadb              
+sentence-transformers
+python-dotenv
+numpy
+pandas
+streamlit
+markdown
+
+
+

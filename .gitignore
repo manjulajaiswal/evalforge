@@ -1,0 +1,22 @@
+# Python virtual environment
+venv/
+
+# Secret environment variables
+.env
+
+# Python cache files
+__pycache__/
+*.pyc
+
+# Local vector database files
+.chroma/
+
+# Local reports generated during testing
+reports/*.json
+reports/*.md
+reports/*.html
+reports/history.jsonl
+
+# OS/editor files
+.DS_Store
+.vscode/

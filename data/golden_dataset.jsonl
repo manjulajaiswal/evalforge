@@ -1,0 +1,3 @@
+{"id":"q001","question":"How many days do customers have to request a refund?","expected_answer":"Customers can request a refund within 7 days of purchase.","expected_source":"refund_policy.md","category":"refund","difficulty":"easy"}
+{"id":"q002","question":"How long does standard shipping take?","expected_answer":"Standard shipping usually takes 3 to 5 business days.","expected_source":"shipping_policy.md","category":"shipping","difficulty":"easy"}
+{"id":"q003","question":"How can users reset their password?","expected_answer":"Users can reset their password using the forgot password option on the login page.","expected_source":"account_policy.md","category":"account","difficulty":"easy"}

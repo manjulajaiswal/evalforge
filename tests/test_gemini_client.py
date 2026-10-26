@@ -87,6 +87,25 @@ def test_429_honours_server_retry_delay():
     assert sleeps == [7.0]
 
 
+def test_daily_quota_exhaustion_fails_fast_without_retries():
+    """Live run #4: free tier allows 20 requests/day; Google said 'retry in 14h53m'.
+    Retrying 5 times per case only wasted ~15 minutes."""
+    client, sdk, sleeps = make_client([api_error(429, "RESOURCE_EXHAUSTED", retry_delay="53594s")])
+    with pytest.raises(ExternalServiceError) as exc:
+        client.generate("p", model="m")
+    assert not exc.value.transient and "quota exhausted" in str(exc.value)
+    assert "14.9 h" in str(exc.value) and len(sdk.calls) == 1 and sleeps == []
+
+
+def test_per_day_quota_message_without_retry_info_fails_fast():
+    err = api_error(429, "RESOURCE_EXHAUSTED")
+    err.message = "Generate content requests per day limit exceeded on Free Tier."
+    client, sdk, _ = make_client([err])
+    with pytest.raises(ExternalServiceError) as exc:
+        client.generate("p", model="m")
+    assert not exc.value.transient and len(sdk.calls) == 1
+
+
 def test_network_errors_are_retried():
     client, _, sleeps = make_client([httpx.ConnectError("boom"), ok_response()])
     assert client.generate("p", model="m").attempts == 2 and len(sleeps) == 1

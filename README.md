@@ -151,7 +151,7 @@ Filters for `run_eval`: `--ids q001,q017`, `--category refund`, `--limit N`, `--
 
 ### Cost and time of a full run
 
-Each case makes 3 Gemini calls (1 answer + 2 judge calls), so the full dataset makes about 330 requests. The report records the actual token counts and estimated cost. Free-tier rate limits vary by account (see Google AI Studio). If you hit HTTP 429 errors, set `GEMINI_MIN_REQUEST_INTERVAL_S` (e.g. `6` for about 10 requests per minute), or run by category or `--limit` first.
+Each case makes 3 Gemini calls (1 answer + 2 judge calls), so the full dataset makes about 330 requests. **The free tier allowed only 20 requests per day for `gemini-3.6-flash` when tested (2026-10-26), so a full run needs a paid-tier key.** At the measured cost of about $0.0047 per case including judge calls, that is roughly $0.50 per full run. The report records the actual token counts and estimated cost. Free-tier rate limits vary by account (see Google AI Studio). If you hit HTTP 429 errors, set `GEMINI_MIN_REQUEST_INTERVAL_S` (e.g. `6` for about 10 requests per minute), or run by category or `--limit` first.
 
 ## 7. Exit codes
 
@@ -272,7 +272,8 @@ Don't lower a threshold just to make a run pass.
 | Exit 2 `vector store is empty` | `python -m scripts.ingest` |
 | Exit 2 `Could not load embedding model` | First run needs internet access to Hugging Face |
 | Exit 3 with `HTTP 503 UNAVAILABLE` | Gemini overloaded; retried with backoff, then recorded. Re-run later |
-| Exit 3 with `HTTP 429` | Rate limit/quota: set `GEMINI_MIN_REQUEST_INTERVAL_S`, use `--limit`, check AI Studio quota |
+| Exit 3 with `HTTP 429` (per-minute) | Rate limit: set `GEMINI_MIN_REQUEST_INTERVAL_S`, use `--limit` |
+| Exit 3, "API quota exhausted" | Daily quota used up (free tier: 20 requests/day). Wait for the reset (midnight Pacific time) or enable billing in Google AI Studio |
 | Exit 3/aborted with `HTTP 401/403` | Invalid key or no API access (not retried) |
 | Exit 3/aborted with `HTTP 404` | Model name wrong or retired: check `GEMINI_MODEL` |
 | Exit 3 `judge_failure` | Judge returned invalid JSON twice; re-run or try another `JUDGE_MODEL` |
@@ -303,7 +304,7 @@ Don't lower a threshold just to make a run pass.
 
 | Item | Status | Evidence |
 |---|---|---|
-| Offline suite (193 tests) | ✅ passes on Python 3.12.13 and 3.13 | `python -m pytest` |
+| Offline suite (195 tests) | ✅ passes on Python 3.12.13 and 3.13 | `python -m pytest` |
 | Independent code review | ✅ 12 confirmed findings fixed, each with a regression test | see git history |
 | Lint, workflow syntax | ✅ | `ruff check .`, `actionlint` |
 | Dataset (110 cases) | ✅ valid | `python -m scripts.validate_dataset` |
@@ -312,7 +313,8 @@ Don't lower a threshold just to make a run pass.
 | Offline CI on GitHub | ✅ green (run #1) | Actions tab |
 | Real ingestion with MiniLM | ✅ ran in GitHub Actions (run #2): 3 documents, 3 chunks | Actions log |
 | Live Gemini evaluation, 5-case smoke run | ✅ completed: 5/5 passed, faithfulness 1.0, 0 hallucinations, about $0.0013 per query; failed the provisional p95 latency gate (10.8 s, n=5) | run #2 report |
-| Full 110-case live evaluation | ⏳ not run yet | `Run workflow` with an empty limit |
+| Full 110-case live evaluation, attempt 1 (run #4) | ❌ aborted correctly, exit 3: the free-tier daily quota (20 requests/day for `gemini-3.6-flash`) was exhausted; 0 cases completed and no metrics claimed | run #4 report |
+| Full 110-case live evaluation | ⏳ needs about 330 requests, more than the free tier's 20/day: requires a paid-tier key (estimated under $1) | see section 6 |
 
 ### First live run (run #2, 5 cases, 2026-10-26)
 
@@ -323,3 +325,10 @@ All 5 answers were correct and faithful (judge and deterministic fact checks agr
 - **Judge calls took up to 119 s,** consistent with free-tier rate-limit retries. They are evaluation overhead, not user-facing latency; retries are now counted in the report.
 
 The 5 s threshold will be recalibrated from the full 110-case run, not from 5 samples.
+
+### Full-run attempt (run #4, 2026-10-26): aborted, as designed
+
+- q001 got HTTP 503 ("model is currently experiencing high demand") through all 5 attempts.
+- q002 and q003 got HTTP 429: the free-tier quota of **20 generate requests per day** for `gemini-3.6-flash` was used up.
+- After 3 consecutive infrastructure failures the circuit breaker stopped the run. The remaining 107 cases were marked `not_run`, every quality gate reported "metric unavailable", and the job exited with code 3 ("incomplete"). No pass was reported.
+- Follow-up fix: the server asked for a retry after about 15 hours, but the client had still retried 5 times per case, wasting about 15 minutes. A 429 whose retry delay exceeds the retry budget, or that names a per-day quota, now fails immediately as a permanent quota error.

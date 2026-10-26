@@ -209,6 +209,23 @@ class GeminiClient:
                         attempts=attempt + 1,
                     ) from exc
                 retry_errors.append(summary)
+                server_delay = _parse_retry_delay(getattr(exc, "details", None))
+                message = str(getattr(exc, "message", "") or "")
+                if code == 429 and (
+                    (server_delay is not None and server_delay > self.max_delay) or "per day" in message.lower()
+                ):
+                    # Quota exhausted (e.g. the free tier's daily request limit): the
+                    # server asks us to wait far longer than any retry budget, so
+                    # retrying only wastes time. Fail fast; the run is aborted.
+                    wait = f" Google asks to retry in about {server_delay / 3600:.1f} h." if server_delay else ""
+                    raise ExternalServiceError(
+                        f"{summary}: API quota exhausted (not a temporary overload).{wait} "
+                        f"Wait for the quota to reset or use a paid tier. {message}".strip(),
+                        transient=False,
+                        status_code=code,
+                        status=status,
+                        attempts=attempt + 1,
+                    ) from exc
                 if attempt >= self.max_retries:
                     raise ExternalServiceError(
                         f"{summary} after {attempt + 1} attempt(s): {getattr(exc, 'message', exc)}",
@@ -218,7 +235,6 @@ class GeminiClient:
                         attempts=attempt + 1,
                     ) from exc
                 delay = backoff_delay(attempt, self.base_delay, self.max_delay, self._rng)
-                server_delay = _parse_retry_delay(getattr(exc, "details", None))
                 if server_delay is not None:
                     delay = max(delay, min(server_delay, self.max_delay))
                 self._sleep(delay)

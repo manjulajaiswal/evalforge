@@ -1,39 +1,44 @@
-from app.loader import load_documents
-from app.chunker import chunk_documents
-from app.embedder import generate_embeddings
-from app.vector_store import add_documents
+"""Load the knowledge base, chunk it, embed it and store it in ChromaDB.
 
-documents = load_documents()
+Usage (repository root, virtual environment active; no API key needed):
 
-print(f"Loaded {len(documents)} documents")
+    python -m scripts.ingest            # sync: safe to run repeatedly
+    python -m scripts.ingest --rebuild  # drop the collection and rebuild it from scratch
 
-chunks = chunk_documents(documents)
+Run it after cloning, and again whenever a file in data/knowledge_base/ or the
+chunking settings change.
+"""
 
-print(f"Created {len(chunks)} chunks")
+from __future__ import annotations
 
-texts = [chunk["content"] for chunk in chunks]
+import argparse
+import sys
 
-embeddings = generate_embeddings(texts)
+from app import config
+from app.errors import ConfigurationError
+from app.ingestion import ingest_knowledge_base
 
-print(f"Generated {len(embeddings)} embeddings")
-print(f"Embedding dimensions: {len(embeddings[0])}")
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Ingest the knowledge base into ChromaDB.")
+    parser.add_argument("--rebuild", action="store_true", help="Delete and recreate the collection first.")
+    args = parser.parse_args(argv)
+
+    try:
+        stats = ingest_knowledge_base(rebuild=args.rebuild)
+    except ConfigurationError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
+
+    print(f"Loaded {stats['documents']} documents")
+    print(f"Created {stats['chunks']} chunks ({stats['index_config']['chunk_strategy']}, "
+          f"size {stats['index_config']['chunk_size']}, overlap {stats['index_config']['chunk_overlap']})")
+    print(f"Embedding dimensions: {stats['embedding_dimensions']}")
+    print(f"New chunks: {stats['new']} | Updated/unchanged: {stats['upserted'] - stats['new']} | "
+          f"Stale chunks removed: {stats['deleted_stale']}")
+    print(f"Documents stored in ChromaDB at {config.CHROMA_DIR} ({stats['total']} chunks in collection)")
+    return 0
 
 
-ids = [
-    f"{chunk['source']}_chunk_{i}"
-    for i, chunk in enumerate(chunks)
-]
-
-metadatas = [
-    {"source": chunk["source"]}
-    for chunk in chunks
-]
-
-add_documents(
-    ids=ids,
-    documents=texts,
-    embeddings=embeddings,
-    metadatas=metadatas,
-)
-
-print("Documents stored in ChromaDB")
+if __name__ == "__main__":
+    sys.exit(main())

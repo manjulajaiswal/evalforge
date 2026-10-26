@@ -1,11 +1,10 @@
-google-genai  
-chromadb              
-sentence-transformers
-python-dotenv
-numpy
-pandas
-streamlit
-markdown
-
-
-
+# Runtime dependencies (versions verified together on Python 3.12 and 3.13, 2026-10-26).
+google-genai==2.33.0
+chromadb==1.5.9
+sentence-transformers==6.2.0
+transformers==5.20.2
+torch==2.14.1
+python-dotenv==1.2.4
+numpy==2.5.4
+pandas==3.1.0
+streamlit==1.66.1

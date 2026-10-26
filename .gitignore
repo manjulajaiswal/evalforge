@@ -1,18 +1,25 @@
-# Python virtual environment
+# Python virtual environments
 venv/
+.venv/
 
 # Secret environment variables
 .env
+.env.*
+!.env.example
 
 # Python cache files
 __pycache__/
 *.pyc
+.pytest_cache/
+.ruff_cache/
 
-# Local vector database files
+# Local vector database (rebuild with: python -m scripts.ingest)
 .chroma/
+chroma_db/
 
-# Local reports generated during testing
+# Generated reports (reports/baseline.json is intentionally tracked)
 reports/*.json
+!reports/baseline.json
 reports/*.md
 reports/*.html
 reports/history.jsonl
@@ -20,3 +27,4 @@ reports/history.jsonl
 # OS/editor files
 .DS_Store
 .vscode/
+.idea/

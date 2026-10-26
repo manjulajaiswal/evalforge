@@ -1,0 +1,24 @@
+[project]
+name = "evalforge"
+version = "1.0.0"
+description = "Automated LLM and RAG evaluation pipeline with quality gates"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+# Only tests/ is collected: scripts/test_*.py are manual smoke scripts that
+# call the real model and API, not pytest tests.
+testpaths = ["tests"]
+addopts = "-m 'not live' -ra"
+markers = [
+    "live: calls the real Gemini API (needs GEMINI_API_KEY; run with: pytest -m live)",
+]
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.ruff]
+line-length = 130
+target-version = "py312"
+extend-exclude = [".venv", ".chroma"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B"]
+ignore = ["E501"]

@@ -1,0 +1,3 @@
+# Normalise line endings so dataset fingerprints match on Windows and Linux
+* text=auto eol=lf
+*.png binary

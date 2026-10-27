@@ -1,8 +1,8 @@
 name: EvalForge
 
 # Offline checks run on every push and pull request and never need secrets.
-# The live evaluation calls the Gemini API (costs money, needs the
-# GEMINI_API_KEY repository secret) and therefore only runs when started
+# The live evaluation calls an LLM API (Gemini or Groq; needs the matching
+# GEMINI_API_KEY or GROQ_API_KEY repository secret) and therefore only runs when started
 # manually, or on pushes to main when the repository variable
 # LIVE_EVAL_ON_PUSH is set to "true". It never runs for pull requests, so a
 # forked PR can never reach the secret.
@@ -21,11 +21,20 @@ on:
         required: false
         default: ""
       request_interval:
-        description: "Minimum seconds between Gemini requests (raise to avoid free-tier 429 rate limits)"
+        description: "Minimum seconds between API requests (raise to avoid free-tier 429 rate limits)"
         required: false
         default: "4"
-      model:
-        description: "Gemini model for answers and judging (empty = gemini-3.6-flash). Free tier: Flash-Lite allows far more requests/day"
+      provider:
+        description: "LLM provider"
+        type: choice
+        options: [gemini, groq]
+        default: gemini
+      generation_model:
+        description: "Model that answers (empty = provider default: gemini-3.6-flash / openai/gpt-oss-20b)"
+        required: false
+        default: ""
+      judge_model:
+        description: "Judge model (empty = provider default: same as answer model / openai/gpt-oss-120b)"
         required: false
         default: ""
 
@@ -69,6 +78,7 @@ jobs:
       - name: Offline test suite (no API key, no model download)
         env:
           GEMINI_API_KEY: ""
+          GROQ_API_KEY: ""
         run: python -m pytest -v
 
   live-evaluation:
@@ -83,19 +93,22 @@ jobs:
       - name: Check that the API key secret exists
         id: secret
         env:
+          PROVIDER: ${{ github.event.inputs.provider || 'gemini' }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: |
           # This job only runs when a live evaluation was explicitly requested, so a
           # missing secret is a configuration error: fail (red), never a silent green.
-          if [ -n "$GEMINI_API_KEY" ]; then
+          if [ "$PROVIDER" = "groq" ]; then name=GROQ_API_KEY; key="$GROQ_API_KEY"; else name=GEMINI_API_KEY; key="$GEMINI_API_KEY"; fi
+          if [ -n "$key" ]; then
             echo "available=true" >> "$GITHUB_OUTPUT"
           else
             echo "available=false" >> "$GITHUB_OUTPUT"
-            echo "::error::Live evaluation NOT RUN: the GEMINI_API_KEY repository secret is not configured."
+            echo "::error::Live evaluation NOT RUN: the $name repository secret is not configured (provider: $PROVIDER)."
             {
               echo "## Live evaluation not run"
               echo ""
-              echo "The \`GEMINI_API_KEY\` repository secret is not set, so no live evaluation ran."
+              echo "The \`$name\` repository secret is not set, so no live evaluation ran."
               echo "No live quality-gate result exists for this commit."
             } >> "$GITHUB_STEP_SUMMARY"
             exit 2
@@ -131,10 +144,13 @@ jobs:
         if: steps.secret.outputs.available == 'true'
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          LLM_PROVIDER: ${{ github.event.inputs.provider || 'gemini' }}
+          GENERATION_MODEL: ${{ github.event.inputs.generation_model }}
+          JUDGE_MODEL: ${{ github.event.inputs.judge_model }}
           IDS: ${{ github.event.inputs.ids }}
           LIMIT: ${{ github.event.inputs.limit }}
           GEMINI_MIN_REQUEST_INTERVAL_S: ${{ github.event.inputs.request_interval || '4' }}
-          GEMINI_MODEL: ${{ github.event.inputs.model || 'gemini-3.6-flash' }}
         run: |
           set +e
           args=()

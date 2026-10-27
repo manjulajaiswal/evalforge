@@ -104,7 +104,7 @@ def generate_answer_detailed(
     question: str, contexts: list[str], *, llm: LLMClient | None = None, model: str | None = None
 ) -> LLMResponse:
     llm = llm or get_llm_client()
-    return llm.generate(build_prompt(question, contexts), model=model or config.GEMINI_MODEL)
+    return llm.generate(build_prompt(question, contexts), model=model or config.GENERATION_MODEL)
 
 
 def generate_answer(question, contexts):

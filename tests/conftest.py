@@ -20,8 +20,10 @@ def offline_environment(request, monkeypatch):
     if request.node.get_closest_marker("live"):
         yield
         return
-    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
-    monkeypatch.setattr("app.config.GEMINI_API_KEY", None)
+    for name in ("GEMINI_API_KEY", "GROQ_API_KEY"):
+        monkeypatch.delenv(name, raising=False)
+        monkeypatch.setattr(f"app.config.{name}", None)
+    monkeypatch.setattr("app.config.LLM_PROVIDER", "gemini")
     embedder.set_embedding_model(FakeEmbedder())
     gemini_client.set_llm_client(None)
     vector_store.set_vector_store(None)

@@ -276,6 +276,8 @@ def test_reports_never_contain_the_api_key(oracle_llm, ingested_store, report_pa
         ({"GEMINI_API_KEY": ""}, "GEMINI_API_KEY is not set"),
         ({"GEMINI_API_KEY": "your_gemini_api_key_here"}, "placeholder"),
         ({"GEMINI_API_KEY": "x" * 30, "TOP_K": "abc"}, "TOP_K must be an integer"),
+        ({"LLM_PROVIDER": "groq", "GROQ_API_KEY": "", "GEMINI_API_KEY": "x" * 30}, "GROQ_API_KEY is not set"),
+        ({"LLM_PROVIDER": "openai", "GEMINI_API_KEY": "x" * 30}, "LLM_PROVIDER must be one of"),
     ],
 )
 def test_run_eval_process_config_errors_exit_2(env_overrides, message):

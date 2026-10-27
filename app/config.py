@@ -69,14 +69,43 @@ CHROMA_COLLECTION_NAME = "evalforge_knowledge"
 # --------------------------------------------------------------------------
 # Models
 # --------------------------------------------------------------------------
+# Which LLM API to use: "gemini" (default, Google) or "groq" (OpenAI-compatible
+# API with a larger free tier).
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "gemini").strip().lower()
+SUPPORTED_PROVIDERS = ("gemini", "groq")
+
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
 # gemini-3.6-flash: stable per https://ai.google.dev/gemini-api/docs/models/gemini-3.6-flash
 # (checked 2026-10-26). gemini-3.5-flash is deprecated and routed to 3.6.
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
 
-# Model used as LLM-as-a-judge. Defaults to the generation model.
-JUDGE_MODEL = os.getenv("JUDGE_MODEL", GEMINI_MODEL)
+# Groq defaults: a small model answers, a larger model judges. Groq applies
+# free-tier quotas per model, so each gets its own daily budget, and judging
+# with a different, stronger model reduces self-grading bias.
+GROQ_GENERATION_MODEL_DEFAULT = "openai/gpt-oss-20b"
+GROQ_JUDGE_MODEL_DEFAULT = "openai/gpt-oss-120b"
+# Reasoning effort for gpt-oss models on Groq ("low" keeps token use small).
+# Set to an empty string to omit the parameter.
+GROQ_REASONING_EFFORT = os.getenv("GROQ_REASONING_EFFORT", "low").strip()
+
+# Model that answers questions (the system under test) and the judge model.
+# GENERATION_MODEL / JUDGE_MODEL override the provider defaults.
+GENERATION_MODEL = os.getenv("GENERATION_MODEL") or (
+    GROQ_GENERATION_MODEL_DEFAULT if LLM_PROVIDER == "groq" else GEMINI_MODEL
+)
+JUDGE_MODEL = os.getenv("JUDGE_MODEL") or (
+    GROQ_JUDGE_MODEL_DEFAULT if LLM_PROVIDER == "groq" else GENERATION_MODEL
+)
+
+
+def provider_api_key() -> str | None:
+    return GROQ_API_KEY if LLM_PROVIDER == "groq" else GEMINI_API_KEY
+
+
+def provider_key_name() -> str:
+    return "GROQ_API_KEY" if LLM_PROVIDER == "groq" else "GEMINI_API_KEY"
 
 EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
 
@@ -134,15 +163,18 @@ ABSTENTION_TEXT = "I don't have enough information to answer that."
 def validate_config(require_api_key: bool = True) -> list[str]:
     """Return a list of configuration problems (empty list means valid)."""
     problems: list[str] = list(_ENV_ERRORS)
-    if require_api_key and not GEMINI_API_KEY:
+    if LLM_PROVIDER not in SUPPORTED_PROVIDERS:
+        problems.append(f"LLM_PROVIDER must be one of {SUPPORTED_PROVIDERS}, got {LLM_PROVIDER!r}.")
+    key, key_name = provider_api_key(), provider_key_name()
+    if require_api_key and not key:
         problems.append(
-            "GEMINI_API_KEY is not set. Copy .env.example to .env and add your key "
+            f"{key_name} is not set (LLM_PROVIDER={LLM_PROVIDER}). Copy .env.example to .env and add your key "
             "(or set the environment variable)."
         )
-    elif require_api_key and GEMINI_API_KEY.strip().lower().startswith("your_"):
-        problems.append("GEMINI_API_KEY still contains the placeholder from .env.example; paste your real key.")
-    if not GEMINI_MODEL.strip():
-        problems.append("GEMINI_MODEL is empty.")
+    elif require_api_key and key.strip().lower().startswith("your_"):
+        problems.append(f"{key_name} still contains the placeholder from .env.example; paste your real key.")
+    if not GENERATION_MODEL.strip():
+        problems.append("GENERATION_MODEL is empty.")
     if not JUDGE_MODEL.strip():
         problems.append("JUDGE_MODEL is empty.")
     if TOP_K < 1:

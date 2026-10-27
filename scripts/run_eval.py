@@ -8,7 +8,7 @@ Usage (from the repository root, virtual environment active):
     python -m scripts.run_eval --category refund  # one category
     python -m scripts.run_eval --update-baseline  # also pin this run as the regression baseline
 
-Requires GEMINI_API_KEY and an ingested vector store (python -m scripts.ingest).
+Requires the provider's API key (GEMINI_API_KEY, or GROQ_API_KEY with LLM_PROVIDER=groq) and an ingested vector store (python -m scripts.ingest).
 Exit codes are documented in app/quality_gates.py and the README.
 """
 
@@ -28,7 +28,7 @@ from app.embedder import generate_embeddings
 from app.errors import ConfigurationError, DatasetValidationError
 from app.evaluator import EvalSettings, aggregate, run_evaluation
 from app.gemini_client import LLMClient, get_llm_client
-from app.pricing import PRICING_CURRENCY, PRICING_SOURCE_URL, PRICING_VERIFIED_ON
+from app.pricing import PRICING_SOURCES
 from app.quality_gates import (
     EXIT_CODE_MEANINGS,
     EXIT_CONFIG_OR_DATASET,
@@ -172,7 +172,8 @@ def _main(
         return EXIT_CONFIG_OR_DATASET
 
     run_config = {
-        "generation_model": config.GEMINI_MODEL,
+        "provider": config.LLM_PROVIDER,
+        "generation_model": config.GENERATION_MODEL,
         "judge_model": config.JUDGE_MODEL,
         "embedding_model": config.EMBEDDING_MODEL_NAME,
         "prompt_version": PROMPT_VERSION,
@@ -193,7 +194,7 @@ def _main(
             "judge_max_format_retries": config.JUDGE_MAX_FORMAT_RETRIES,
         },
         "embedding_warmup_ms": round(embedding_warmup_ms, 1),  # one-off startup cost, excluded from per-query latency
-        "pricing": {"source": PRICING_SOURCE_URL, "verified_on": PRICING_VERIFIED_ON, "currency": PRICING_CURRENCY},
+        "pricing": PRICING_SOURCES.get(config.LLM_PROVIDER, {}),
         "quality_gates": config.QUALITY_GATES,
     }
 
@@ -209,7 +210,7 @@ def _main(
         print(f"[{done}/{total}] {record['id']}: {status}{detail}", flush=True)
 
     print(
-        f"Evaluating {len(cases)} case(s) with {config.GEMINI_MODEL} (judge {config.JUDGE_MODEL}), "
+        f"Evaluating {len(cases)} case(s) via {config.LLM_PROVIDER}: {config.GENERATION_MODEL} (judge {config.JUDGE_MODEL}), "
         f"top-k={top_k}, store has {store.count()} chunks.",
         flush=True,
     )
@@ -217,7 +218,7 @@ def _main(
         llm=llm,
         store=store,
         top_k=top_k,
-        generation_model=config.GEMINI_MODEL,
+        generation_model=config.GENERATION_MODEL,
         judge_model=config.JUDGE_MODEL,
         pricing_date=started_at.date(),
         compute_semantic_similarity=compute_semantic_similarity,

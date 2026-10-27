@@ -78,7 +78,8 @@ app/
   vector_store.py      ChromaDB at .chroma/, idempotent sync, search
   ingestion.py         load -> chunk -> embed -> store, records index config
   rag_pipeline.py      THE system under test: retrieve() + generate_answer()
-  gemini_client.py     Gemini SDK wrapper: retries, backoff, error classes, token usage
+  gemini_client.py     Gemini SDK wrapper: retries, backoff, error classes, token usage; provider selection
+  groq_client.py       Groq (OpenAI-compatible) client with the same retry/error policy
   dataset.py           golden dataset schema + validation (file:line errors)
   metrics.py           fact checks, abstention, retrieval metrics, percentiles
   judge.py             LLM-as-a-judge (faithfulness, correctness/relevance)
@@ -103,7 +104,7 @@ tests/live/                  live API tests (opt-in: pytest -m live)
 
 ## 4. Technology stack
 
-Python 3.12, `google-genai` (Gemini), `sentence-transformers` (`all-MiniLM-L6-v2`), ChromaDB, NumPy, python-dotenv, Streamlit + pandas (dashboard), pytest + ruff (development), GitHub Actions. All versions are pinned in `requirements.txt` and `requirements-dev.txt`.
+Python 3.12, `google-genai` (Gemini) or Groq's OpenAI-compatible API via `httpx`, `sentence-transformers` (`all-MiniLM-L6-v2`), ChromaDB, NumPy, python-dotenv, Streamlit + pandas (dashboard), pytest + ruff (development), GitHub Actions. All versions are pinned in `requirements.txt` and `requirements-dev.txt`.
 
 ## 5. Setup (Windows PowerShell)
 
@@ -253,15 +254,25 @@ Don't lower a threshold just to make a run pass.
 ## 11. GitHub Actions (`.github/workflows/evalforge.yml`)
 
 - **offline-tests** runs on every push and pull request, with no secrets. It installs pinned dependencies (CPU-only PyTorch), then runs `ruff`, dataset validation and the full offline pytest suite.
-- **live-evaluation** runs only when started manually (*Actions → EvalForge → Run workflow*, with optional case IDs such as `q017,q068`, an optional case limit, an optional model override, and a minimum interval between API requests, default 4 s, to stay under free-tier rate limits), or on pushes to `main` if the repository variable `LIVE_EVAL_ON_PUSH` is `true`. It never runs for pull requests, so forked PRs can't reach the secret. It ingests, runs `scripts.run_eval`, publishes the Markdown report to the job summary, uploads the reports as an artifact, and then fails the job with the evaluator's exit code. Because this job only runs when a live evaluation was requested, a missing secret **fails the job** ("Live evaluation NOT RUN") instead of leaving a misleading green check.
+- **live-evaluation** runs only when started manually (*Actions → EvalForge → Run workflow*, with optional case IDs such as `q017,q068`, an optional case limit, a provider choice (Gemini or Groq) with optional answer/judge model overrides, and a minimum interval between API requests, default 4 s, to stay under free-tier rate limits), or on pushes to `main` if the repository variable `LIVE_EVAL_ON_PUSH` is `true`. It never runs for pull requests, so forked PRs can't reach the secret. It ingests, runs `scripts.run_eval`, publishes the Markdown report to the job summary, uploads the reports as an artifact, and then fails the job with the evaluator's exit code. Because this job only runs when a live evaluation was requested, a missing secret **fails the job** ("Live evaluation NOT RUN") instead of leaving a misleading green check.
 
-**Secret setup:** repository *Settings → Secrets and variables → Actions → New repository secret*, with name `GEMINI_API_KEY`. Optional: under *Variables*, add `LIVE_EVAL_ON_PUSH` = `true`.
+**Secret setup:** repository *Settings → Secrets and variables → Actions → New repository secret*, with name `GEMINI_API_KEY`, or `GROQ_API_KEY` when using the Groq provider. Optional: under *Variables*, add `LIVE_EVAL_ON_PUSH` = `true`.
 
 ## 12. Model and pricing
 
 - Model: `gemini-3.6-flash`. Stable according to the [model page](https://ai.google.dev/gemini-api/docs/models/gemini-3.6-flash), checked 2026-10-26. `gemini-3.5-flash`, which this project used earlier, is deprecated and is now routed to 3.6 automatically.
 - Prices (USD per 1M tokens), from [Gemini Developer API pricing](https://ai.google.dev/gemini-api/docs/pricing), verified 2026-10-26: $0.75 input / $3.75 output through 2026-12-31, then $1.50 / $7.50 from 2027-01-01. Output includes thinking tokens. `app/pricing.py` picks the price for the run date.
 - Cost figures are estimates at paid Standard-tier list prices. The free tier is not billed. An unlisted model gets cost "n/a", never another model's price.
+
+### Alternative provider: Groq
+
+Gemini's free tier allows 20 requests per day for `gemini-3.6-flash` (observed in run #4), but a full run needs about 330. So EvalForge can also run on [Groq](https://groq.com) via `LLM_PROVIDER=groq` and `GROQ_API_KEY`. In GitHub Actions, choose **provider: groq** in *Run workflow*.
+
+- **Models.** By default, `openai/gpt-oss-20b` answers and `openai/gpt-oss-120b` judges. Groq applies free-tier quotas per model, so each model gets its own daily budget. Judging with a different, larger model also reduces the self-grading bias listed under Limitations. Override with `GENERATION_MODEL` / `JUDGE_MODEL`.
+- **Free-plan limits.** Groq's sample free-plan limits, read by benchlm.ai on 2026-10-16, are 30 requests/min, 1,000 requests/day, 8,000 tokens/min and 200,000 tokens/day per model. Exact limits for your organisation are on Groq's console limits page.
+- **Prices.** Per 1M tokens: gpt-oss-20b $0.075 in / $0.30 out; gpt-oss-120b $0.15 / $0.60. These come from two independent trackers (benchlm.ai, eesel.ai), because groq.com could not be fetched from the build environment. Re-check them on groq.com/pricing.
+- **Implementation.** `app/groq_client.py` calls the OpenAI-compatible Chat Completions endpoint with `httpx`, using the same retry, quota fail-fast and error-classification rules as the Gemini client. Judge calls use JSON mode, and their output is still validated by `app/judge.py`.
+- **Comparability.** Results from Groq models describe those models. The compatibility key includes the provider and models, so they are never compared with Gemini baselines.
 
 ## 13. Troubleshooting
 
@@ -304,7 +315,7 @@ Don't lower a threshold just to make a run pass.
 
 | Item | Status | Evidence |
 |---|---|---|
-| Offline suite (195 tests) | ✅ passes on Python 3.12.13 and 3.13 | `python -m pytest` |
+| Offline suite (218 tests) | ✅ passes on Python 3.12.13 and 3.13 | `python -m pytest` |
 | Independent code review | ✅ 12 confirmed findings fixed, each with a regression test | see git history |
 | Lint, workflow syntax | ✅ | `ruff check .`, `actionlint` |
 | Dataset (110 cases) | ✅ valid | `python -m scripts.validate_dataset` |

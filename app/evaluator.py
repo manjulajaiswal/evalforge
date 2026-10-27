@@ -53,7 +53,7 @@ class EvalSettings:
     llm: LLMClient
     store: VectorStore | None = None
     top_k: int = field(default_factory=lambda: config.TOP_K)
-    generation_model: str = field(default_factory=lambda: config.GEMINI_MODEL)
+    generation_model: str = field(default_factory=lambda: config.GENERATION_MODEL)
     judge_model: str = field(default_factory=lambda: config.JUDGE_MODEL)
     pricing_date: date = field(default_factory=date.today)
     max_consecutive_infra_failures: int = field(default_factory=lambda: config.MAX_CONSECUTIVE_INFRA_FAILURES)

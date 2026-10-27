@@ -48,6 +48,7 @@ def compatibility_key(run_config: dict) -> str:
         for k in (
             "dataset_fingerprint",
             "case_ids_fingerprint",
+            "provider",
             "generation_model",
             "judge_model",
             "prompt_version",
@@ -210,7 +211,7 @@ def render_markdown(report: dict) -> str:
         "",
         f"- **Run:** `{report['run_id']}` ({report['run_mode']}), started {report['started_at']}, took {report['duration_s']:.1f} s",
         f"- **Status:** {report['status']} | **Exit code:** {report['exit_code']} ({report['exit_meaning']})",
-        f"- **Model:** `{cfg['generation_model']}` | **Judge:** `{cfg['judge_model']}` | **top-k:** {cfg['top_k']} | "
+        f"- **Provider:** {cfg.get('provider', 'gemini')} | **Model:** `{cfg['generation_model']}` | **Judge:** `{cfg['judge_model']}` | **top-k:** {cfg['top_k']} | "
         f"**Prompt:** `{cfg['prompt_version']}`",
         f"- **Index:** {json.dumps(cfg.get('index_config'))}",
         f"- **Dataset:** {report['dataset']['total']} cases in file, {c['selected']} selected "
@@ -310,7 +311,7 @@ def render_markdown(report: dict) -> str:
         f"{_fmt(cost['mean_pipeline_cost_per_query'], 'usd')}",
         f"- Estimated judge cost: {_fmt(cost['judge_total'], 'usd')} | Estimated run total: {_fmt(cost['run_total'], 'usd')}",
         f"- Pricing source: {cfg.get('pricing', {}).get('source')} (verified {cfg.get('pricing', {}).get('verified_on')}); "
-        "paid Standard-tier list prices, thinking tokens billed as output. 'n/a' = usage or pricing unavailable.",
+        "paid list prices (free-tier usage is not billed), reasoning/thinking tokens billed as output. 'n/a' = usage or pricing unavailable.",
         "",
         "## By category",
         "",

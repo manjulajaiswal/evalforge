@@ -1,5 +1,6 @@
 # Runtime dependencies (versions verified together on Python 3.12 and 3.13, 2026-10-26).
 google-genai==2.33.0
+httpx==0.28.1
 chromadb==1.5.9
 sentence-transformers==6.2.0
 transformers==5.20.2

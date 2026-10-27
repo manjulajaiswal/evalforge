@@ -199,7 +199,7 @@ class GeminiClient:
                         400: "invalid request or invalid API key",
                         401: "authentication failed - check GEMINI_API_KEY",
                         403: "permission denied - check GEMINI_API_KEY and API access",
-                        404: f"model {model!r} not found - check GEMINI_MODEL / JUDGE_MODEL",
+                        404: f"model {model!r} not found - check GEMINI_MODEL / GENERATION_MODEL / JUDGE_MODEL",
                     }.get(code, "non-retryable API error")
                     raise ExternalServiceError(
                         f"{summary}: {hint}. {getattr(exc, 'message', '')}".strip(),
@@ -278,9 +278,15 @@ _default_client: LLMClient | None = None
 
 
 def get_llm_client() -> LLMClient:
+    """The client for config.LLM_PROVIDER ("gemini" or "groq"), created once."""
     global _default_client
     if _default_client is None:
-        _default_client = GeminiClient()
+        if config.LLM_PROVIDER == "groq":
+            from app.groq_client import GroqClient
+
+            _default_client = GroqClient()
+        else:
+            _default_client = GeminiClient()
     return _default_client
 
 

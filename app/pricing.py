@@ -49,6 +49,21 @@ MODEL_PRICES: dict[str, list[PriceWindow]] = {
     ],
     "gemini-3.5-flash-lite": [PriceWindow(None, None, 0.30, 2.50)],
     "gemini-3.1-flash-lite": [PriceWindow(None, None, 0.25, 1.50)],
+    # Groq on-demand prices. Groq's own pricing page could not be fetched from the
+    # build environment; these values agree across two independent trackers
+    # (benchlm.ai, read 2026-10-20; eesel.ai, 2026-06-08) and should be
+    # re-checked at https://groq.com/pricing. Reasoning tokens count as output.
+    "openai/gpt-oss-20b": [PriceWindow(None, None, 0.075, 0.30)],
+    "openai/gpt-oss-120b": [PriceWindow(None, None, 0.15, 0.60)],
+}
+
+PRICING_SOURCES = {
+    "gemini": {"source": PRICING_SOURCE_URL, "verified_on": PRICING_VERIFIED_ON, "currency": PRICING_CURRENCY},
+    "groq": {
+        "source": "https://groq.com/pricing (values via benchlm.ai/free-tier/groq and eesel.ai/blog/groq-pricing)",
+        "verified_on": "2026-10-28 (secondary sources)",
+        "currency": PRICING_CURRENCY,
+    },
 }
 
 

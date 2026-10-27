@@ -12,6 +12,10 @@ on:
   pull_request:
   workflow_dispatch:
     inputs:
+      ids:
+        description: "Comma-separated case IDs to run, e.g. q017,q068 (empty = all)"
+        required: false
+        default: ""
       limit:
         description: "Run only the first N cases (empty = full dataset)"
         required: false
@@ -123,15 +127,15 @@ jobs:
         if: steps.secret.outputs.available == 'true'
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          IDS: ${{ github.event.inputs.ids }}
           LIMIT: ${{ github.event.inputs.limit }}
           GEMINI_MIN_REQUEST_INTERVAL_S: ${{ github.event.inputs.request_interval || '4' }}
         run: |
           set +e
-          if [ -n "$LIMIT" ]; then
-            python -m scripts.run_eval --limit "$LIMIT"
-          else
-            python -m scripts.run_eval
-          fi
+          args=()
+          if [ -n "$IDS" ]; then args+=(--ids "$IDS"); fi
+          if [ -n "$LIMIT" ]; then args+=(--limit "$LIMIT"); fi
+          python -m scripts.run_eval "${args[@]}"
           code=$?
           echo "exit_code=$code" >> "$GITHUB_OUTPUT"
           exit 0

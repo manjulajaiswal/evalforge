@@ -24,6 +24,10 @@ on:
         description: "Minimum seconds between Gemini requests (raise to avoid free-tier 429 rate limits)"
         required: false
         default: "4"
+      model:
+        description: "Gemini model for answers and judging (empty = gemini-3.6-flash). Free tier: Flash-Lite allows far more requests/day"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -130,6 +134,7 @@ jobs:
           IDS: ${{ github.event.inputs.ids }}
           LIMIT: ${{ github.event.inputs.limit }}
           GEMINI_MIN_REQUEST_INTERVAL_S: ${{ github.event.inputs.request_interval || '4' }}
+          GEMINI_MODEL: ${{ github.event.inputs.model || 'gemini-3.6-flash' }}
         run: |
           set +e
           args=()

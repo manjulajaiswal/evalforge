@@ -15,8 +15,8 @@ JudgeOutputError (after a configurable number of re-asks) so that a broken
 judge never silently produces a passing score.
 
 Limitations (documented in the README): the judge is itself an LLM and can be
-wrong; by default it is the same model family as the system under test,
-which may bias it toward its own phrasing; its verdicts are not deterministic.
+wrong; when it is the same model as the system under test (the Gemini default),
+it may be biased toward its own phrasing; its verdicts are not deterministic.
 """
 
 from __future__ import annotations

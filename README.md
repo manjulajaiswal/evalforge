@@ -21,6 +21,10 @@ Unit tests can check deterministic functions. LLM applications fail in other way
 | API instability | HTTP 503 / 429, bad key, unknown model | Retries, error classification, "incomplete" status (never a pass) |
 | Cost/latency drift | Thinking tokens double the cost | Token usage, cost estimate, p95 latency gate |
 
+### Latest full evaluation (110 cases, live)
+
+Run on Groq (`gpt-oss-20b` answering, `gpt-oss-120b` judging): **77 of 110 passed, 0 errors**. Abstention on unanswerable questions was 100%, the hallucination rate 1.8% and p95 latency 3.0 s. The **answer-accuracy gate failed (70% < 80%)** because the model over-abstains on scenario questions. See [section 16](#16-verified-status) for the analysis.
+
 ## 2. Architecture
 
 ```mermaid
@@ -241,7 +245,7 @@ Policies:
   - faithfulness, when no answer made any claims;
   - the regression gate, when there is no compatible baseline;
   - source hit rate, when top-k is at least the number of chunks in the store, so every source is always retrieved. This is true of the current default configuration.
-- A baseline is compatible only if the dataset, case selection, models, prompt, top-k and index all match.
+- A baseline is compatible when the dataset, case selection and judge model match: that is, when the *test* is the same. The answer model, prompt, top-k and index may differ, because those are what the regression gate exists to compare. Each report and history entry records them, so it is clear what changed.
 - Only a complete run can report `gates_passed: true`.
 
 **These thresholds are provisional.** They have not been calibrated against a live baseline yet. Calibrate them like this:
@@ -262,7 +266,7 @@ Don't lower a threshold just to make a run pass.
 
 - Model: `gemini-3.6-flash`. Stable according to the [model page](https://ai.google.dev/gemini-api/docs/models/gemini-3.6-flash), checked 2026-10-26. `gemini-3.5-flash`, which this project used earlier, is deprecated and is now routed to 3.6 automatically.
 - Prices (USD per 1M tokens), from [Gemini Developer API pricing](https://ai.google.dev/gemini-api/docs/pricing), verified 2026-10-26: $0.75 input / $3.75 output through 2026-12-31, then $1.50 / $7.50 from 2027-01-01. Output includes thinking tokens. `app/pricing.py` picks the price for the run date.
-- Cost figures are estimates at paid Standard-tier list prices. The free tier is not billed. An unlisted model gets cost "n/a", never another model's price.
+- Cost figures are estimates at paid list prices. The free tier is not billed. An unlisted model gets cost "n/a", never another model's price.
 
 ### Alternative provider: Groq
 
@@ -272,7 +276,7 @@ Gemini's free tier allows 20 requests per day for `gemini-3.6-flash` (observed i
 - **Free-plan limits.** Groq's sample free-plan limits, read by benchlm.ai on 2026-10-16, are 30 requests/min, 1,000 requests/day, 8,000 tokens/min and 200,000 tokens/day per model. Exact limits for your organisation are on Groq's console limits page.
 - **Prices.** Per 1M tokens: gpt-oss-20b $0.075 in / $0.30 out; gpt-oss-120b $0.15 / $0.60. These come from two independent trackers (benchlm.ai, eesel.ai), because groq.com could not be fetched from the build environment. Re-check them on groq.com/pricing.
 - **Implementation.** `app/groq_client.py` calls the OpenAI-compatible Chat Completions endpoint with `httpx`, using the same retry, quota fail-fast and error-classification rules as the Gemini client. Judge calls use JSON mode, and their output is still validated by `app/judge.py`.
-- **Comparability.** Results from Groq models describe those models. The compatibility key includes the provider and models, so they are never compared with Gemini baselines.
+- **Comparability.** Results from Groq models describe those models. A baseline is only compared with runs that use the same judge model, so a Groq baseline (judged by gpt-oss-120b) is never compared with a Gemini run judged by Gemini.
 
 ## 13. Troubleshooting
 
@@ -306,7 +310,7 @@ Gemini's free tier allows 20 requests per day for `gemini-3.6-flash` (observed i
 ## 15. Limitations
 
 - The knowledge base is tiny: 3 documents of about 350 characters each. With the default 500-character chunks, each document is one chunk. With top-k = 3, every query retrieves every document, so the source hit rate is trivially 100% and precision is about 0.33. This also explains the early observation that "a refund question retrieved account and shipping documents". `scripts/retrieval_experiment.py` compares this with paragraph chunking and smaller k on the unchanged dataset. Any switch should be made from that evidence (`CHUNK_STRATEGY=paragraph`, `TOP_K=…`, then re-ingest).
-- The LLM judge can be wrong. By default it is the same model as the system under test (possible self-preference bias), and it is not deterministic. Its verdicts, issues and claim lists are stored per case so false positives and negatives can be audited.
+- The LLM judge can be wrong, and it is not deterministic. With the Gemini default, the judge is the same model as the system under test (possible self-preference bias); the Groq configuration uses a different, larger judge model. In the full run, the judge rated a few concise but correct answers as `partially_correct` for omitting secondary details (q005, q044, q065), so it errs on the strict side. Its verdicts, issues and claim lists are stored per case so false positives and negatives can be audited.
 - Generation is not deterministic, so repeated runs differ. Calibrate gates on several runs.
 - Source-level retrieval metrics can't tell which chunk of a relevant file was retrieved.
 - Offline tests use a fake embedder and a fake LLM. They verify the evaluation *logic*, not real model quality.
@@ -325,7 +329,34 @@ Gemini's free tier allows 20 requests per day for `gemini-3.6-flash` (observed i
 | Real ingestion with MiniLM | ✅ ran in GitHub Actions (run #2): 3 documents, 3 chunks | Actions log |
 | Live Gemini evaluation, 5-case smoke run | ✅ completed: 5/5 passed, faithfulness 1.0, 0 hallucinations, about $0.0013 per query; failed the provisional p95 latency gate (10.8 s, n=5) | run #2 report |
 | Full 110-case live evaluation, attempt 1 (run #4) | ❌ aborted correctly, exit 3: the free-tier daily quota (20 requests/day for `gemini-3.6-flash`) was exhausted; 0 cases completed and no metrics claimed | run #4 report |
-| Full 110-case live evaluation | ⏳ needs about 330 requests, more than the free tier's 20/day: requires a paid-tier key (estimated under $1) | see section 6 |
+| **Full 110-case live evaluation (Groq, 2026-10-27 UTC)** | ✅ **completed: 110/110 cases, 0 errors, 77 passed.** Exit 1: the answer-accuracy gate failed (0.70 < 0.80); all other gates passed | Groq run report, `reports/baseline.json` |
+
+### Full evaluation (2026-10-27 UTC): Groq, `gpt-oss-20b` answering, `gpt-oss-120b` judging
+
+| Metric | Value | Gate |
+|---|---|---|
+| Cases completed / errored | 110 / 0 | complete run |
+| Pass rate / answer accuracy | 70.0% | ❌ accuracy ≥ 80% |
+| Abstention accuracy (36 unanswerable) | 100.0% | ✅ ≥ 80% |
+| Hallucination rate | 1.8% (2 cases) | ✅ ≤ 20% |
+| Mean faithfulness | 0.967 (n=50 answers with claims) | ✅ ≥ 0.70 |
+| Mean answer relevance | 0.811 | ✅ ≥ 0.70 |
+| p50 / p95 end-to-end latency | 2.7 s / 3.0 s (n=110) | ✅ ≤ 5 s |
+| Estimated cost | $0.00004 per query; $0.04 for the whole run including judging | ✅ ≤ $0.01/query |
+| Retrieval | hit rate 100%, precision 0.36 | skipped: non-informative with 3 chunks and top-k 3 |
+
+**What the evaluation found.** The system is *safe but over-cautious*. It refused every unanswerable question and almost never invented facts. However, on **24 of the 74 answerable questions** it replied "I don't have enough information" even though the policy contained the answer. The pattern is specific: it refused **11 of 14 scenario questions** (e.g. *"I bought something 5 days ago, can I still get a refund?"*), 3 of 3 `partial` cases and 3 of 4 `exception` cases, but **0 of 6** direct lookups. In other words, the model retrieves facts but does not *apply* them. Every one of these cases had the relevant document retrieved (hit rate 100%), so this is a generation/prompt problem, not a retrieval problem.
+
+The remaining 9 failures:
+- **Genuine errors:**
+  - q011 said damaged items are refundable, contradicting the policy.
+  - q030 claimed guaranteed same-day processing before 6 PM.
+  - q106 accepted a false premise about 3 attempts.
+  - q059 invented password-reset steps.
+- **Judge strictness:** q005, q044, q065 and q007 were correct but concise answers rated `partially_correct`.
+- **An over-strict test:** q057's answer ("refund processing usually takes longer") was right, but its fact check also required both durations. This is noted rather than edited, so that the dataset stays unchanged between comparable runs.
+
+**Decision.** The 80% accuracy gate is a product requirement, not a number to tune until it passes, so it stays and the build stays red. The next step is to change the system: a prompt that tells the model to apply the policy to the user's situation, or a stronger answer model. Then re-run against this baseline; `reports/baseline.json` pins this run, so the regression gate compares the next run automatically. The latency (5 s) and cost gates were checked against this full baseline and kept unchanged.
 
 ### First live run (run #2, 5 cases, 2026-10-26)
 
@@ -335,7 +366,7 @@ All 5 answers were correct and faithful (judge and deterministic fact checks agr
 - **Real model variance.** q005's generation took 11.7 s on a single attempt (no retries), with 478 thinking tokens against about 200 for the other cases. With n=5, "p95" is effectively the slowest case.
 - **Judge calls took up to 119 s,** consistent with free-tier rate-limit retries. They are evaluation overhead, not user-facing latency; retries are now counted in the report.
 
-The 5 s threshold will be recalibrated from the full 110-case run, not from 5 samples.
+The 5 s threshold was later checked against the full 110-case run (p95 3.0 s on Groq) and kept.
 
 ### Full-run attempt (run #4, 2026-10-26): aborted, as designed
 

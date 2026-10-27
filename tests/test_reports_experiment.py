@@ -47,11 +47,16 @@ def test_read_history_tolerates_corrupt_lines(tmp_path):
     assert read_history(tmp_path / "missing.jsonl") == []
 
 
-def test_compatibility_key_changes_with_model_or_dataset():
-    base = {"generation_model": "m", "dataset_fingerprint": "d", "top_k": 3}
+def test_compatibility_key_identifies_the_test_not_the_system_under_test():
+    base = {"generation_model": "m", "judge_model": "j", "dataset_fingerprint": "d", "case_ids_fingerprint": "c",
+            "top_k": 3, "prompt_version": "p1"}
     assert compatibility_key(base) == compatibility_key(dict(base))
-    assert compatibility_key(base) != compatibility_key({**base, "generation_model": "other"})
-    assert compatibility_key(base) != compatibility_key({**base, "dataset_fingerprint": "e"})
+    # Changing the system under test must stay comparable (that is what the regression gate checks)...
+    for change in ({"generation_model": "other"}, {"prompt_version": "p2"}, {"top_k": 1}, {"index_config": {"x": 1}}):
+        assert compatibility_key(base) == compatibility_key({**base, **change}), change
+    # ...but changing the measuring instrument must not.
+    for change in ({"dataset_fingerprint": "e"}, {"case_ids_fingerprint": "z"}, {"judge_model": "k"}):
+        assert compatibility_key(base) != compatibility_key({**base, **change}), change
 
 
 def test_baseline_roundtrip_and_incompatibility(tmp_path):

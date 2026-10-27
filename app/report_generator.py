@@ -26,13 +26,13 @@ REPORT_SCHEMA_VERSION = 1
 LIMITATIONS = [
     "Faithfulness means 'supported by the retrieved context', not 'true in the real world'. "
     "A faithful answer can repeat an incorrect document; a true statement can be unfaithful if it was not retrieved.",
-    "Correctness, relevance and faithfulness are graded by an LLM judge. Judges can be wrong, are not deterministic, "
-    "and by default use the same model family as the system under test (possible self-preference bias).",
+    "Correctness, relevance and faithfulness are graded by an LLM judge. Judges can be wrong and are not deterministic; "
+    "when the judge is the same model as the system under test (the Gemini default) it may favour its own phrasing.",
     "Deterministic fact checks only cover facts annotated in expected_facts (numbers, times, key phrases).",
     "Semantic similarity (MiniLM cosine) is a diagnostic only; it rates '30 days' and '7 days' as similar.",
     "Retrieval metrics are source-level (file name), not chunk-level.",
     "Latency percentiles from small samples are unstable; see the sample size n next to each value.",
-    "Costs are estimates at paid Standard-tier list prices; free-tier usage is not billed.",
+    "Costs are estimates at paid list prices; free-tier usage is not billed.",
     "Generation is not deterministic, so repeated runs can differ.",
 ]
 
@@ -42,20 +42,16 @@ def new_run_id(now: datetime) -> str:
 
 
 def compatibility_key(run_config: dict) -> str:
-    """Runs are comparable only if dataset, case selection, models, prompt and index match."""
-    relevant = {
-        k: run_config.get(k)
-        for k in (
-            "dataset_fingerprint",
-            "case_ids_fingerprint",
-            "provider",
-            "generation_model",
-            "judge_model",
-            "prompt_version",
-            "top_k",
-            "index_config",
-        )
-    }
+    """Identifies the *test*, not the system under test.
+
+    Two runs are comparable when they used the same dataset, the same case
+    selection and the same judge model, because then their scores were
+    produced by the same measuring instrument. The answer model, prompt,
+    top-k and index are deliberately excluded: those are exactly what a
+    regression check must be able to compare across. (They are still
+    recorded in each report and history entry, so it is visible what changed.)
+    """
+    relevant = {k: run_config.get(k) for k in ("dataset_fingerprint", "case_ids_fingerprint", "judge_model")}
     return hashlib.sha256(json.dumps(relevant, sort_keys=True).encode()).hexdigest()[:16]
 
 
@@ -121,6 +117,9 @@ def history_entry(report: dict) -> dict:
         "generation_model": report["config"]["generation_model"],
         "judge_model": report["config"]["judge_model"],
         "top_k": report["config"]["top_k"],
+        "provider": report["config"].get("provider"),
+        "prompt_version": report["config"].get("prompt_version"),
+        "index_config": report["config"].get("index_config"),
         "counts": s["counts"],
         "metrics": {
             "pass_rate": s["answer"]["pass_rate"],
@@ -148,7 +147,7 @@ def load_baseline(path: Path, compat_key: str) -> tuple[dict | None, str]:
     except json.JSONDecodeError as exc:
         return None, f"baseline file is not valid JSON ({exc.msg}); ignoring it"
     if baseline.get("compatibility_key") != compat_key:
-        return None, "baseline is incompatible (different dataset, case selection, model, prompt or index)"
+        return None, "baseline is incompatible (different dataset, case selection or judge model)"
     return baseline, f"compared with baseline run {baseline.get('run_id')}"
 
 

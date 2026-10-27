@@ -10,7 +10,7 @@ Material conditions:
 * gemini-3.6-flash list prices change on 2027-01-01 (both rates double); the
   rate is chosen by the date of the evaluation run.
 * The free tier is "Free of charge". Estimates here are what the same usage
-  would cost at paid Standard-tier list prices, not what a free-tier user is
+  would cost at paid list prices, not what a free-tier user is
   billed.
 * Context caching, batch and priority tiers are not modelled.
 
